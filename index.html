@@ -5276,13 +5276,16 @@ async function recordAffiliateVisit(affiliateCode) {
 }
 
 // Check if user came from an affiliate link
+
 function checkAffiliatePromoCode() {
-    recordAffiliateVisit(refCode);
     const params = new URLSearchParams(window.location.search);
     const refCode = params.get('ref');
     const promoInput = document.getElementById('promoCode');
     
     if (refCode && promoInput) {
+        // Record the visit FIRST (after refCode is defined)
+        recordAffiliateVisit(refCode);
+        
         // Auto-fill the promo code field
         promoInput.value = refCode.toUpperCase();
         promoInput.style.borderColor = '#00cc44';
@@ -5293,7 +5296,6 @@ function checkAffiliatePromoCode() {
         
         // Store in localStorage so we remember
         localStorage.setItem('sharpi_referrer', refCode);
-        // ✅ Record the visit in Supabase
         
         console.log('✅ Affiliate promo code detected:', refCode);
         return refCode;
@@ -5311,6 +5313,10 @@ function checkAffiliatePromoCode() {
     
     return null;
 }
+
+
+
+    
 // ============================================================
 
 // ============================================================
