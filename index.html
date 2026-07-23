@@ -5277,31 +5277,29 @@ async function recordAffiliateVisit(affiliateCode) {
 
 // Check if user came from an affiliate link
 
+
 function checkAffiliatePromoCode() {
     const params = new URLSearchParams(window.location.search);
     const refCode = params.get('ref');
     const promoInput = document.getElementById('promoCode');
     
     if (refCode && promoInput) {
-        // Record the visit FIRST (after refCode is defined)
-        recordAffiliateVisit(refCode);
+        if (typeof recordAffiliateVisit === 'function') {
+            recordAffiliateVisit(refCode);
+        }
         
-        // Auto-fill the promo code field
         promoInput.value = refCode.toUpperCase();
         promoInput.style.borderColor = '#00cc44';
         promoInput.style.background = 'rgba(0, 204, 68, 0.05)';
         
-        // Show a toast notification
         showToast(`🎯 Referred by affiliate! Promo code: ${refCode}`, 'success');
         
-        // Store in localStorage so we remember
         localStorage.setItem('sharpi_referrer', refCode);
         
         console.log('✅ Affiliate promo code detected:', refCode);
         return refCode;
     }
     
-    // Check if we have a stored referrer
     const storedRef = localStorage.getItem('sharpi_referrer');
     if (storedRef && promoInput && !promoInput.value) {
         promoInput.value = storedRef.toUpperCase();
@@ -5313,7 +5311,6 @@ function checkAffiliatePromoCode() {
     
     return null;
 }
-
 
 
     
@@ -5424,6 +5421,7 @@ function listenForAdminDispatch(userId) {
 // ============================================================
 // FIXED: AUTO UNLOCK APP
 // ============================================================
+
 function autoUnlockApp(token) {
     if (!currentUser) {
         console.warn('⚠️ No current user to unlock');
@@ -5434,7 +5432,7 @@ function autoUnlockApp(token) {
     console.log('🔑 Token:', token);
     
     currentUser.verified = true;
-    updateVerifiedBadge(); // <-- Add this line
+    updateVerifiedBadge();
     currentUser.token = token;
     
     const userIndex = appData.users.findIndex(u => u.id === currentUser.id);
@@ -5443,13 +5441,21 @@ function autoUnlockApp(token) {
     }
     saveData();
     
+    // ✅ FIX: Record sale AFTER token verification
+    const promoCode = document.getElementById('promoCode')?.value?.trim()?.toUpperCase() || 
+                       localStorage.getItem('sharpi_referrer') || null;
+    
+    // Call the new function (will be added in PATCH 2)
+    if (typeof recordSaleAfterVerification === 'function') {
+        recordSaleAfterVerification(currentUser, token, promoCode);
+    }
+    
     showToast('✅ ✅ ✅ ACCESS GRANTED! Welcome to SHARPI!', 'success');
     
     setTimeout(() => {
         goToDashboard();
     }, 1500);
 }
-
 
 // ============================================================
 // AUTO UNLOCK APP
@@ -6167,85 +6173,90 @@ function verifyToken(enteredToken, user) {
   return { valid: false, reason: 'Invalid token' };
 } // ============================================================
 function verifyAccessToken() {
-  // Get currentUser from global scope
-  const user = window.currentUser || currentUser;
-  
-  if (!user) {
+    const user = window.currentUser || currentUser;
+    
+    if (!user) {
+        const statusEl = document.getElementById('tokenStatus');
+        if (statusEl) {
+            statusEl.textContent = '❌ Please create an account first';
+            statusEl.style.color = '#ff3333';
+        }
+        showToast('❌ Please create an account first', 'error');
+        return;
+    }
+
+    if (user.verified) {
+        const statusEl = document.getElementById('tokenStatus');
+        if (statusEl) {
+            statusEl.textContent = '✅ Already verified!';
+            statusEl.style.color = '#00cc44';
+        }
+        showToast('✅ Already verified!', 'success');
+        goToDashboard();
+        return;
+    }
+
+    const input = document.getElementById('tokenInput');
+    if (!input) {
+        showToast('❌ Token input not found', 'error');
+        return;
+    }
+
+    const enteredToken = input.value.trim();
+    if (!enteredToken) {
+        const statusEl = document.getElementById('tokenStatus');
+        if (statusEl) {
+            statusEl.textContent = '❌ Please enter your access token';
+            statusEl.style.color = '#ff3333';
+        }
+        showToast('❌ Please enter your access token', 'error');
+        return;
+    }
+
+    const result = verifyToken(enteredToken, user);
+
+    if (!result.valid) {
+        const statusEl = document.getElementById('tokenStatus');
+        if (statusEl) {
+            statusEl.textContent = '❌ ' + result.reason;
+            statusEl.style.color = '#ff3333';
+        }
+        showToast('❌ ' + result.reason, 'error');
+        return;
+    }
+
+    user.verified = true;
+    user.package = 'verified';
+    user.tokenUsed = enteredToken;
+
+    const userIndex = appData.users.findIndex(u => u.id === user.id);
+    if (userIndex !== -1) {
+        appData.users[userIndex] = user;
+    }
+    window.currentUser = user;
+    currentUser = user;
+    saveData();
+
     const statusEl = document.getElementById('tokenStatus');
     if (statusEl) {
-      statusEl.textContent = '❌ Please create an account first';
-      statusEl.style.color = '#ff3333';
+        statusEl.textContent = '✅ Access granted! Welcome to SHARPI!';
+        statusEl.style.color = '#00cc44';
     }
-    showToast(' Please create an account first', 'error');
-    return;
-  }
+    showToast('✅ Access granted!', 'success');
 
-  if (user.verified) {
-    const statusEl = document.getElementById('tokenStatus');
-    if (statusEl) {
-      statusEl.textContent = '✅ Already verified!';
-      statusEl.style.color = '#00cc44';
+    hidePaymentSection();
+
+    // ✅ FIX: Record sale AFTER token verification
+    const promoCode = document.getElementById('promoCode')?.value?.trim()?.toUpperCase() || 
+                       localStorage.getItem('sharpi_referrer') || null;
+    
+    if (typeof recordSaleAfterVerification === 'function') {
+        recordSaleAfterVerification(user, enteredToken, promoCode);
     }
-    showToast(' Already verified!', 'success');
-    goToDashboard();
-    return;
-  }
 
-  const input = document.getElementById('tokenInput');
-  if (!input) {
-    showToast(' Token input not found', 'error');
-    return;
-  }
-
-  const enteredToken = input.value.trim();
-  if (!enteredToken) {
-    const statusEl = document.getElementById('tokenStatus');
-    if (statusEl) {
-      statusEl.textContent = '❌ Please enter your access token';
-      statusEl.style.color = '#ff3333';
-    }
-    return;
-  }
-
-  // Verify the token
-  const result = verifyToken(enteredToken, user);
-
-  if (!result.valid) {
-    const statusEl = document.getElementById('tokenStatus');
-    if (statusEl) {
-      statusEl.textContent = ' ' + result.reason;
-      statusEl.style.color = '#ff3333';
-    }
-    showToast(' ' + result.reason, 'error');
-    return;
-  }
-
-  // Token is valid - grant access
-  user.verified = true;
-  user.package = 'verified';
-  user.tokenUsed = enteredToken;
-
-  // Update in appData
-  const userIndex = appData.users.findIndex(u => u.id === user.id);
-  if (userIndex !== -1) {
-    appData.users[userIndex] = user;
-  }
-  window.currentUser = user;
-  currentUser = user;
-  saveData();
-
-  const statusEl = document.getElementById('tokenStatus');
-  if (statusEl) {
-    statusEl.textContent = '✅ Access granted! Welcome to SHARPI!';
-    statusEl.style.color = '#00cc44';
-  }
-  showToast(' Access granted!', 'success');
-
-  hidePaymentSection();
-
-  setTimeout(() => {
-    goToDashboard();
-  }, 1500);
+    setTimeout(() => {
+        goToDashboard();
+    }, 1500);
 }
     // ============================================================
     // ADMIN: GENERATE TOKEN
@@ -9623,6 +9634,122 @@ generateRound = function() {
       }, 12000);
     }
   })();
+  // ============================================================
+// ✅ NEW: RECORD SALE AFTER TOKEN VERIFICATION
+// ============================================================
+async function recordSaleAfterVerification(user, token, promoCode) {
+    if (!supabaseClient) {
+        console.warn('⚠️ Supabase not connected, skipping sale record');
+        return;
+    }
+
+    try {
+        const { data: paymentData, error: paymentError } = await supabaseClient
+            .from('payment_requests')
+            .select('*')
+            .eq('user_id', user.id)
+            .eq('status', 'verified')
+            .order('created_at', { ascending: false })
+            .limit(1);
+
+        if (paymentError) throw paymentError;
+
+        const payment = paymentData?.[0];
+        if (!payment) {
+            console.warn('⚠️ No payment request found for user:', user.id);
+            return;
+        }
+
+        const pkgName = payment.package_name || payment.package || 'Package';
+        const amount = payment.amount || 0;
+        const promoCodeFromPayment = payment.promo_code || promoCode || null;
+
+        if (promoCodeFromPayment) {
+            const saleData = {
+                user_id: user.id,
+                user_name: user.name,
+                user_whatsapp: user.whatsapp,
+                package: pkgName,
+                package_name: pkgName,
+                amount: amount,
+                promo_code: promoCodeFromPayment,
+                affiliate_code: promoCodeFromPayment,
+                commission: amount * 0.5,
+                status: 'verified',
+                sale_date: new Date().toISOString(),
+                token: token
+            };
+
+            const { error: saleError } = await supabaseClient
+                .from('sales')
+                .insert([saleData]);
+
+            if (saleError) {
+                console.warn('⚠️ Failed to insert into sales:', saleError);
+            } else {
+                console.log('✅ Sale recorded for affiliate:', promoCodeFromPayment);
+            }
+
+            const visitorId = localStorage.getItem('sharpi_visitor_id');
+            if (visitorId) {
+                const { error: visitError } = await supabaseClient
+                    .from('affiliate_visits')
+                    .update({
+                        converted: true,
+                        converted_at: new Date().toISOString(),
+                        purchase_amount: amount,
+                        purchase_package: pkgName
+                    })
+                    .eq('affiliate_code', promoCodeFromPayment)
+                    .eq('visitor_id', visitorId)
+                    .eq('converted', false);
+
+                if (visitError) {
+                    console.warn('⚠️ Failed to mark visit as converted:', visitError);
+                } else {
+                    console.log('✅ Affiliate visit marked as converted for:', promoCodeFromPayment);
+                }
+            }
+
+            const today = new Date().toISOString().split('T')[0];
+            const commission = amount * 0.5;
+
+            const { data: existing } = await supabaseClient
+                .from('daily_stats')
+                .select('id, purchases, earnings')
+                .eq('affiliate_code', promoCodeFromPayment)
+                .eq('date', today)
+                .maybeSingle();
+
+            if (existing) {
+                await supabaseClient
+                    .from('daily_stats')
+                    .update({
+                        purchases: (existing.purchases || 0) + 1,
+                        earnings: (existing.earnings || 0) + commission,
+                        updated_at: new Date().toISOString()
+                    })
+                    .eq('id', existing.id);
+            } else {
+                await supabaseClient
+                    .from('daily_stats')
+                    .insert({
+                        affiliate_code: promoCodeFromPayment,
+                        date: today,
+                        link_clicks: 0,
+                        purchases: 1,
+                        earnings: commission
+                    });
+            }
+            console.log('✅ Daily stats updated for affiliate:', promoCodeFromPayment);
+        } else {
+            console.log('ℹ️ No promo code - sale not tracked for affiliate');
+        }
+
+    } catch (e) {
+        console.error('❌ Sale recording error:', e);
+    }
+}
   </script>
 </body>
 </html>
