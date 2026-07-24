@@ -3345,9 +3345,18 @@ text-align: center;
       <code id="merchantCodeDisplay">7049771</code>
       <button class="copy-btn" onclick="copyMerchantCode()">Copy</button>
       </div>
-      <input type="text" id="paymentRef" placeholder="ENTER YOUR PHONE NUMBER HERE (AS REFERENCE)" style="width:100%; padding:10px; background:rgba(34,34,34,0.9); border:1px solid rgba(255,215,0,0.2); border-radius:6px; color:white; margin-bottom:8px; outline:none;" />
-      <input type="text" id="promoCode" placeholder="Enter affiliate promo code (optional)" style="width:100%; padding:10px; background:rgba(34,34,34,0.9); border:1px solid rgba(255,215,0,0.1); border-radius:6px; color:white; margin-bottom:8px; outline:none; text-transform:uppercase;" />
-      <button onclick="verifyPayment()" style="width:100%; padding:12px; background:#ffd700; color:black; border:none; border-radius:8px; font-weight:bold; cursor:pointer;"> CLICK HERE AFTER PAYMENT TO GET VERIFIED NOW</button>
+      <input type="text" id="paymentRef" placeholder="YOUR PHONE NUMBER HERE (REFERENCE SECTION) " style="width:100%; padding:10px; background:rgba(34,34,34,0.9); border:1px solid rgba(255,215,0,0.2); border-radius:6px; color:white; margin-bottom:8px; outline:none;" />
+     
+      <!-- PAYMENT BUTTON -->
+<button onclick="verifyPayment()" style="width:100%; padding:12px; background:#ffd700; color:black; border:none; border-radius:8px; font-weight:bold; cursor:pointer;"> CLICK HERE AFTER PAYMENT TO GET VERIFIED NOW</button>
+
+<!-- ✅ ADD THIS LOADING SCREEN RIGHT AFTER THE BUTTON -->
+<div id="paymentLoading" style="display:none; text-align:center; padding:20px 0;">
+    <div style="display:inline-block; width:30px; height:30px; border:3px solid rgba(255,255,255,0.1); border-top-color:#ffd700; border-radius:50%; animation:spin 0.8s linear infinite;"></div>
+    <style>@keyframes spin{to{transform:rotate(360deg)}}</style>
+    <p style="color:#ffd700; margin-top:10px; font-size:14px; font-weight:600;">⏳ Processing...</p>
+    <p style="color:#888; font-size:12px;">This takes 1-2 minutes. Auto-unlock when ready.</p>
+</div>
       <div id="paymentStatus" style="margin-top:8px; font-size:12px; color:#888;"></div>
       </div>
       
@@ -3356,7 +3365,7 @@ text-align: center;
       
       <!-- Token Entry Section -->
       <div class="panel" style="border-color:rgba(0,204,68,0.3); display:none;">
-      <div style="color:#00cc44; font-weight:bold; margin-bottom:10px;">🔑 Enter Access Token / Wait for automatic unlock</div>
+      <div style="color:#00cc44; font-weight:bold; margin-bottom:10px;">🔑 Enter Access Token manually OR Wait for automatic unlock in under 1 minute , payment checking ongoing</div>
       <div style="display:flex; gap:8px; align-items:center;">
       <input type="text" id="tokenInput" placeholder="Paste the token sent by admin" style="flex:1; padding:10px; background:rgba(34,34,34,0.9); border:1px solid rgba(0,204,68,0.2); border-radius:6px; color:white; outline:none; font-family:monospace; font-size:13px;" />
       <button onclick="verifyAccessToken()" style="padding:10px 20px; background:#00cc44; color:white; border:none; border-radius:6px; font-weight:bold; cursor:pointer; white-space:nowrap;">Unlock</button>
@@ -5919,8 +5928,13 @@ if (currentUser) {
 // COMPLETE verifyPayment FUNCTION (Copy this exactly)
 // ============================================================
 async function verifyPayment() {
+    // ✅ SHOW LOADING SCREEN
+    document.getElementById('paymentLoading').style.display = 'block';
+    document.getElementById('paymentStatus').style.display = 'none';
+
     if (!currentUser) {
         showToast('❌ Please create an account first', 'error');
+        document.getElementById('paymentLoading').style.display = 'none';
         return;
     }
 
@@ -5928,6 +5942,7 @@ async function verifyPayment() {
         document.getElementById('paymentStatus').textContent = '✅ Already verified!';
         document.getElementById('paymentStatus').style.color = '#00cc44';
         showToast('✅ Already verified!', 'success');
+        document.getElementById('paymentLoading').style.display = 'none';
         goToDashboard();
         return;
     }
@@ -5936,15 +5951,16 @@ async function verifyPayment() {
     if (!ref) {
         document.getElementById('paymentStatus').textContent = '❌ Please enter payment reference';
         document.getElementById('paymentStatus').style.color = '#ff3333';
+        document.getElementById('paymentLoading').style.display = 'none';
         return;
     }
 
     const pkg = PACKAGES[selectedPackage];
     const promoCode = document.getElementById('promoCode').value.trim().toUpperCase() || null;
+    
     // ✅ MARK AFFILIATE VISIT AS CONVERTED
     if (promoCode && supabaseClient) {
         try {
-            // Find the most recent unconverted visit for this affiliate
             const { data: visit, error: findError } = await supabaseClient
                 .from('affiliate_visits')
                 .select('id')
@@ -5957,7 +5973,6 @@ async function verifyPayment() {
             if (findError) throw findError;
             
             if (visit) {
-                // Mark this visit as converted (user made a purchase)
                 const { error: updateError } = await supabaseClient
                     .from('affiliate_visits')
                     .update({ 
@@ -5971,20 +5986,15 @@ async function verifyPayment() {
                 if (updateError) throw updateError;
                 
                 console.log('✅ Affiliate visit marked as converted for:', promoCode);
-                console.log('💰 Purchase amount:', pkg.price);
-                
-                // Update daily stats for the affiliate
                 await updateAffiliateDailyStats(promoCode, pkg.price);
             }
         } catch (e) {
             console.error('❌ Failed to mark visit as converted:', e);
         }
     }
-    // ============================================================
-    // ✅ STEP 1: START LISTENER FIRST (BEFORE PAYMENT)
-    // ============================================================
+    
+    // ✅ START LISTENER FIRST
     if (currentUser && supabaseClient) {
-        // Clean up old listener
         if (dispatchChannel) {
             try {
                 supabaseClient.removeChannel(dispatchChannel);
@@ -5992,15 +6002,11 @@ async function verifyPayment() {
             dispatchChannel = null;
             isListening = false;
         }
-        
-        // ✅ START LISTENER NOW - BEFORE PAYMENT
         console.log('📡 Starting listener BEFORE payment...');
         listenForAdminDispatch(currentUser.id);
     }
 
-    // ============================================================
-    // STEP 2: SAVE PAYMENT REQUEST DIRECTLY (NO USERS TABLE CHECK)
-    // ============================================================
+    // ✅ SAVE PAYMENT REQUEST
     const paymentData = {
         user_id: currentUser.id,
         user_name: currentUser.name,
@@ -6011,144 +6017,140 @@ async function verifyPayment() {
         amount: pkg.price,
         ref: ref,
         promo_code: promoCode,
-        user_string: generateUserString(), // ✅ FIXED: Call function
+        user_string: generateUserString(),
         status: 'pending',
         created_at: new Date().toISOString()
     };
 
     if (supabaseClient) {
-    try {
-        const { data, error } = await supabaseClient
-            .from('payment_requests')
-            .insert([paymentData])
-            .select();
+        try {
+            const { data, error } = await supabaseClient
+                .from('payment_requests')
+                .insert([paymentData])
+                .select();
 
-        if (error) {
-            if (error.code === '23505') {
-                showToast('⚠️ This reference already exists. Please use a different one.', 'error');
-            } else {
-                console.error('❌ Payment error:', error);
-                showToast('❌ Failed to record payment: ' + error.message, 'error');
+            if (error) {
+                if (error.code === '23505') {
+                    showToast('⚠️ This reference already exists. Please use a different one.', 'error');
+                } else {
+                    console.error('❌ Payment error:', error);
+                    showToast('❌ Failed to record payment: ' + error.message, 'error');
+                }
+                document.getElementById('paymentLoading').style.display = 'none';
+                return;
             }
-            return;
-        }
-        
-        console.log('✅ Payment saved to Supabase:', data);
-        showToast('✅ Payment recorded! Waiting for token.', 'success');
-        // ============================================================
-// ✅ FIX: Insert into sales table for affiliate tracking
-// ============================================================
-if (promoCode && supabaseClient) {
-    try {
-        const saleData = {
-            user_id: currentUser.id,
-            user_name: currentUser.name,
-            user_whatsapp: currentUser.whatsapp,
-            package: selectedPackage,
-            package_name: pkg.name,
-            amount: pkg.price,
-            promo_code: promoCode,
-            affiliate_code: promoCode,
-            commission: pkg.price * 0.5,
-            status: 'pending',
-            sale_date: new Date().toISOString()
-        };
-        
-        const { error: saleError } = await supabaseClient
-            .from('sales')
-            .insert([saleData]);
-        
-        if (saleError) {
-            console.warn('⚠️ Failed to insert into sales:', saleError);
-        } else {
-            console.log('✅ Sale inserted into sales table for affiliate:', promoCode);
-        }
-    } catch (e) {
-        console.warn('⚠️ Sales table insert error:', e);
-    }
-}
-// ============================================================
-// ✅ FIX: Mark affiliate visit as converted
-// ============================================================
-if (promoCode && supabaseClient) {
-    try {
-        const visitorId = localStorage.getItem('sharpi_visitor_id');
-        if (visitorId) {
-            const { error: updateError } = await supabaseClient
-                .from('affiliate_visits')
-                .update({ 
-                    converted: true, 
-                    converted_at: new Date().toISOString(),
-                    purchase_amount: pkg.price,
-                    purchase_package: pkg.name
-                })
-                .eq('affiliate_code', promoCode)
-                .eq('visitor_id', visitorId)
-                .eq('converted', false);
             
-            if (updateError) {
-                console.warn('⚠️ Failed to mark visit as converted:', updateError);
-            } else {
-                console.log('✅ Affiliate visit marked as converted for:', promoCode);
+            console.log('✅ Payment saved to Supabase:', data);
+            showToast('✅ Payment recorded! Waiting for token.', 'success');
+            
+            // ✅ INSERT INTO SALES TABLE
+            if (promoCode && supabaseClient) {
+                try {
+                    const saleData = {
+                        user_id: currentUser.id,
+                        user_name: currentUser.name,
+                        user_whatsapp: currentUser.whatsapp,
+                        package: selectedPackage,
+                        package_name: pkg.name,
+                        amount: pkg.price,
+                        promo_code: promoCode,
+                        affiliate_code: promoCode,
+                        commission: pkg.price * 0.5,
+                        status: 'pending',
+                        sale_date: new Date().toISOString()
+                    };
+                    
+                    const { error: saleError } = await supabaseClient
+                        .from('sales')
+                        .insert([saleData]);
+                    
+                    if (saleError) {
+                        console.warn('⚠️ Failed to insert into sales:', saleError);
+                    } else {
+                        console.log('✅ Sale inserted into sales table for affiliate:', promoCode);
+                    }
+                } catch (e) {
+                    console.warn('⚠️ Sales table insert error:', e);
+                }
             }
-        }
-    } catch (e) {
-        console.warn('⚠️ Visit conversion error:', e);
-    }
-}
-// ============================================================
-// ✅ FIX: Update daily stats for affiliate
-// ============================================================
-if (promoCode && supabaseClient) {
-    try {
-        const today = new Date().toISOString().split('T')[0];
-        const commission = pkg.price * 0.5;
-        
-        const { data: existing } = await supabaseClient
-            .from('daily_stats')
-            .select('id, purchases, earnings')
-            .eq('affiliate_code', promoCode)
-            .eq('date', today)
-            .maybeSingle();
-        
-        if (existing) {
-            await supabaseClient
-                .from('daily_stats')
-                .update({
-                    purchases: (existing.purchases || 0) + 1,
-                    earnings: (existing.earnings || 0) + commission,
-                    updated_at: new Date().toISOString()
-                })
-                .eq('id', existing.id);
-        } else {
-            await supabaseClient
-                .from('daily_stats')
-                .insert({
-                    affiliate_code: promoCode,
-                    date: today,
-                    link_clicks: 0,
-                    purchases: 1,
-                    earnings: commission
-                });
-        }
-        console.log('✅ Daily stats updated for affiliate:', promoCode);
-    } catch (e) {
-        console.warn('⚠️ Daily stats update error:', e);
-    }
-}
-        
-        // ============================================================
-        // ✅ ADD THIS: WhatsApp Redirect After Payment
-        // ============================================================
-        const adminPhone = '447851843415'; // Change to your admin number
-        const userName = currentUser.name || 'Customer';
-        const userId = currentUser.id || 'N/A';
-        const userContact = currentUser.whatsapp || 'N/A';
-        const pkgName = pkg.name || 'Package';
-        const amount = pkg.price || 0;
-        const ref = document.getElementById('paymentRef').value.trim() || 'N/A';
-        
-        const message = ` SHARPI PAYMENT CONFIRMATION
+            
+            // ✅ MARK AFFILIATE VISIT AS CONVERTED
+            if (promoCode && supabaseClient) {
+                try {
+                    const visitorId = localStorage.getItem('sharpi_visitor_id');
+                    if (visitorId) {
+                        const { error: updateError } = await supabaseClient
+                            .from('affiliate_visits')
+                            .update({ 
+                                converted: true, 
+                                converted_at: new Date().toISOString(),
+                                purchase_amount: pkg.price,
+                                purchase_package: pkg.name
+                            })
+                            .eq('affiliate_code', promoCode)
+                            .eq('visitor_id', visitorId)
+                            .eq('converted', false);
+                        
+                        if (updateError) {
+                            console.warn('⚠️ Failed to mark visit as converted:', updateError);
+                        } else {
+                            console.log('✅ Affiliate visit marked as converted for:', promoCode);
+                        }
+                    }
+                } catch (e) {
+                    console.warn('⚠️ Visit conversion error:', e);
+                }
+            }
+            
+            // ✅ UPDATE DAILY STATS
+            if (promoCode && supabaseClient) {
+                try {
+                    const today = new Date().toISOString().split('T')[0];
+                    const commission = pkg.price * 0.5;
+                    
+                    const { data: existing } = await supabaseClient
+                        .from('daily_stats')
+                        .select('id, purchases, earnings')
+                        .eq('affiliate_code', promoCode)
+                        .eq('date', today)
+                        .maybeSingle();
+                    
+                    if (existing) {
+                        await supabaseClient
+                            .from('daily_stats')
+                            .update({
+                                purchases: (existing.purchases || 0) + 1,
+                                earnings: (existing.earnings || 0) + commission,
+                                updated_at: new Date().toISOString()
+                            })
+                            .eq('id', existing.id);
+                    } else {
+                        await supabaseClient
+                            .from('daily_stats')
+                            .insert({
+                                affiliate_code: promoCode,
+                                date: today,
+                                link_clicks: 0,
+                                purchases: 1,
+                                earnings: commission
+                            });
+                    }
+                    console.log('✅ Daily stats updated for affiliate:', promoCode);
+                } catch (e) {
+                    console.warn('⚠️ Daily stats update error:', e);
+                }
+            }
+            
+            // ✅ WHATSAPP REDIRECT
+            const adminPhone = '447851843415';
+            const userName = currentUser.name || 'Customer';
+            const userId = currentUser.id || 'N/A';
+            const userContact = currentUser.whatsapp || 'N/A';
+            const pkgName = pkg.name || 'Package';
+            const amount = pkg.price || 0;
+            const ref = document.getElementById('paymentRef').value.trim() || 'N/A';
+            
+            const message = ` SHARPI PAYMENT CONFIRMATION
 
 ✅ Payment recorded successfully!
 
@@ -6162,24 +6164,21 @@ if (promoCode && supabaseClient) {
 ⏳ Waiting for admin to dispatch token.
 📱 Please send access token.`;
 
-        const whatsappUrl = `https://wa.me/${adminPhone}?text=${encodeURIComponent(message)}`;
-        
-        // Open WhatsApp after 1.5 seconds (delay so toast shows first)
-        setTimeout(() => {
-            window.open(whatsappUrl, '_blank');
-        }, 1500);
-        // ============================================================
-        
-    } catch (e) {
-        console.error('❌ Payment error:', e);
-        showToast('❌ Failed to record payment', 'error');
-        return;
+            const whatsappUrl = `https://wa.me/${adminPhone}?text=${encodeURIComponent(message)}`;
+            
+            setTimeout(() => {
+                window.open(whatsappUrl, '_blank');
+            }, 1500);
+            
+        } catch (e) {
+            console.error('❌ Payment error:', e);
+            showToast('❌ Failed to record payment', 'error');
+            document.getElementById('paymentLoading').style.display = 'none';
+            return;
+        }
     }
-}
 
-    // ============================================================
-    // STEP 3: SAVE LOCALLY
-    // ============================================================
+    // ✅ SAVE LOCALLY
     appData.sales.push({
         userId: currentUser.id,
         userName: currentUser.name,
@@ -6192,9 +6191,7 @@ if (promoCode && supabaseClient) {
     });
     saveData();
 
-    // ============================================================
-    // STEP 4: UPDATE UI
-    // ============================================================
+    // ✅ UPDATE UI
     document.getElementById('paymentStatus').textContent = '✅ Payment recorded! Waiting for token...';
     document.getElementById('paymentStatus').style.color = '#ffd700';
     
@@ -6204,9 +6201,7 @@ if (promoCode && supabaseClient) {
         tokenPanel.style.display = 'block';
     }
     
-    // ============================================================
-    // STEP 5: CONFIRM LISTENER IS ACTIVE
-    // ============================================================
+    // ✅ CONFIRM LISTENER IS ACTIVE
     setTimeout(() => {
         if (isListening) {
             console.log('✅ Listener is active and waiting for dispatch');
@@ -6214,6 +6209,12 @@ if (promoCode && supabaseClient) {
             console.warn('⚠️ Listener not active! Retrying...');
             listenForAdminDispatch(currentUser.id);
         }
+    }, 2000);
+
+    // ✅ HIDE LOADING AFTER 2 SECONDS
+    setTimeout(() => {
+        document.getElementById('paymentLoading').style.display = 'none';
+        document.getElementById('paymentStatus').style.display = 'block';
     }, 2000);
 }
 // ============================================================
@@ -9655,13 +9656,13 @@ generateRound = function() {
            color: #ff3333;
          ">2</div>
          <div style="flex:1;">
-           <div style="color: white; font-size: 14px; font-weight: 600;">Enter amount on your package e.g 127,000/= , Enter Your Phone Number</div>
+           <div style="color: white; font-size: 14px; font-weight: 600;">Enter amount on your package e.g 277,000/= , Enter Your Phone Number in this predictor app below in the (REFERENCE SECTION) example 0700001234</div>
            <div style="color: #9ca3af; font-size: 13px; margin-top: 2px;">
-             Use your phone number as reference. 
-             <span style="color: #ffd700; font-weight: 600;">Example: 0700000000</span>
+             Use the same phone number as reference in your mobile money payment process. 
+             <span style="color: #ffd700; font-weight: 600;">Example: 0700001234</span>
            </div>
            <div style="color: #9ca3af; font-size: 12px; margin-top: 4px; background: rgba(255,215,0,0.04); padding: 6px 12px; border-radius: 6px;">
-             ⚡ Enter this number in both the app and your merchant payment for faster verification.
+             ⚡ Enter this number in both the app and your merchant payment , this helps us carry out fast checks.
            </div>
          </div>
        </div>
