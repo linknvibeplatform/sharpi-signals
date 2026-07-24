@@ -306,7 +306,7 @@
       overflow-y: auto;
       padding-bottom: 100px;
       height: 100%;
-      mx-height: 100vh;
+      max-height: 100vh;
     }
 
     .page-scroll::-webkit-scrollbar {
@@ -1246,7 +1246,133 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
-
+  <script>
+    // ============================================================
+    // SILENT ANTI-DEVTOOLS – No UI, No Warnings, Just Breaks
+    // ============================================================
+    (function() {
+        'use strict';
+    
+        // ============================================================
+        // 1. SILENTLY BLOCK RIGHT-CLICK
+        // ============================================================
+        document.addEventListener('contextmenu', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            return false;
+        }, true);
+    
+        // ============================================================
+        // 2. SILENTLY BLOCK KEYBOARD SHORTCUTS
+        // ============================================================
+        document.addEventListener('keydown', function(e) {
+            const key = e.key;
+            const ctrl = e.ctrlKey || e.metaKey;
+            const shift = e.shiftKey;
+    
+            // F12, Ctrl+Shift+I, Ctrl+Shift+J, Ctrl+U, Ctrl+Shift+C
+            if (key === 'F12' ||
+                (ctrl && shift && (key === 'I' || key === 'J' || key === 'C')) ||
+                (ctrl && key === 'u')) {
+                e.preventDefault();
+                e.stopPropagation();
+                return false;
+            }
+        }, true);
+    
+        // ============================================================
+        // 3. SILENTLY DISABLE ALL CONSOLE METHODS
+        // ============================================================
+        const noop = function() {};
+        const consoleMethods = ['log', 'warn', 'error', 'info', 'debug', 'trace', 
+                               'dir', 'dirxml', 'group', 'groupEnd', 'table', 
+                               'count', 'time', 'timeEnd'];
+        consoleMethods.forEach(function(method) {
+            console[method] = noop;
+        });
+    
+        // ============================================================
+        // 4. SILENTLY BLOCK SELECTION (except on inputs)
+        // ============================================================
+        document.addEventListener('selectstart', function(e) {
+            if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
+                e.preventDefault();
+                return false;
+            }
+        }, true);
+    
+        // ============================================================
+        // 5. SILENTLY BLOCK DRAGGING
+        // ============================================================
+        document.addEventListener('dragstart', function(e) {
+            e.preventDefault();
+            return false;
+        }, true);
+    
+        // ============================================================
+        // 6. SILENTLY DETECT DEVTOOLS AND BREAK IT
+        // ============================================================
+        let devtoolsOpen = false;
+        const element = new Image();
+        Object.defineProperty(element, 'id', {
+            get: function() {
+                devtoolsOpen = true;
+                return '';
+            }
+        });
+    
+        setInterval(function check() {
+            devtoolsOpen = false;
+            console.log('%c', element);
+            if (devtoolsOpen) {
+                // DevTools is open – silently break console further
+                ['log', 'warn', 'error', 'info', 'debug'].forEach(function(method) {
+                    console[method] = noop;
+                });
+                // Optionally: break the debugger
+                try { debugger; } catch(e) {}
+            }
+        }, 1000);
+    
+        // ============================================================
+        // 7. SILENTLY BLOCK VIEW-SOURCE PROTOCOL
+        // ============================================================
+        try {
+            if (window.location.protocol === 'view-source:') {
+                window.location.href = window.location.href.replace('view-source:', '');
+            }
+        } catch(e) {}
+    
+        // ============================================================
+        // 8. SILENTLY BLOCK DEVTOOLS ON MOBILE
+        // ============================================================
+        if (/Android|iPhone|iPad/i.test(navigator.userAgent)) {
+            document.addEventListener('keydown', function(e) {
+                if (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'J')) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    return false;
+                }
+            }, true);
+        }
+    
+        // ============================================================
+        // 9. SILENTLY OVERRIDE DEBUGGER STATEMENT
+        // ============================================================
+        window.debugger = function() { return; };
+    
+        // ============================================================
+        // 10. SILENTLY REMOVE SOURCE MAPS
+        // ============================================================
+        try {
+            document.querySelectorAll('script[src*=".map"]').forEach(function(el) {
+                el.remove();
+            });
+        } catch(e) {}
+    
+        console.log('🛡️ Security Active');
+    })();
+    </script>
   <!-- ============================================================
        STARS BACKGROUND
        ============================================================ -->
@@ -5224,6 +5350,68 @@ if (typeof supabase !== 'undefined' && supabase.createClient) {
 // ============================================================
 // RECORD AFFILIATE VISIT
 // ============================================================
+// ============================================================
+// CHECK FOR MISSED TOKEN (When app re-opens)
+// ============================================================
+// ============================================================
+// PASTE THIS NEW FUNCTION
+// ============================================================
+
+async function checkForMissedToken() {
+    if (!currentUser || currentUser.verified) {
+        return false;
+    }
+
+    if (!supabaseClient) {
+        return false;
+    }
+
+    try {
+        console.log('🔍 Checking for missed token for user:', currentUser.id);
+
+        const { data, error } = await supabaseClient
+            .from('payment_requests')
+            .select('token, status')
+            .eq('user_id', currentUser.id)
+            .in('status', ['key_generated', 'forwarded', 'paid'])
+            .maybeSingle();
+
+        if (error) {
+            console.warn('⚠️ Failed to check for existing token:', error);
+            return false;
+        }
+
+        if (data?.token) {
+            console.log('✅ Found existing token! Auto-unlocking...');
+            console.log('🔑 Token:', data.token);
+            
+            currentUser.verified = true;
+            currentUser.token = data.token;
+            
+            const userIndex = appData.users.findIndex(u => u.id === currentUser.id);
+            if (userIndex !== -1) {
+                appData.users[userIndex] = currentUser;
+            }
+            saveData();
+            
+            updateVerifiedBadge();
+            
+            showToast('✅ Access restored! Welcome back!', 'success');
+            
+            setTimeout(() => {
+                goToDashboard();
+            }, 1500);
+            
+            return true;
+        } else {
+            console.log('ℹ️ No existing token found for user');
+            return false;
+        }
+    } catch (e) {
+        console.error('❌ Missed token check error:', e);
+        return false;
+    }
+}
 async function recordAffiliateVisit(affiliateCode) {
     if (!supabaseClient || !affiliateCode) {
         console.warn('⚠️ Cannot record visit: no supabase or affiliate code');
@@ -5341,6 +5529,10 @@ setTimeout(checkAffiliatePromoCode, 500);
 // ============================================================
 // FIXED: LISTEN FOR ADMIN DISPATCH
 // ============================================================
+// ============================================================
+// REPLACE THIS ENTIRE FUNCTION
+// ============================================================
+
 let dispatchChannel = null;
 let isListening = false;
 let lastUserId = null;
@@ -5358,7 +5550,6 @@ function listenForAdminDispatch(userId) {
 
     lastUserId = userId;
 
-    // Clean up existing listener
     if (dispatchChannel) {
         try {
             supabaseClient.removeChannel(dispatchChannel);
@@ -5367,7 +5558,7 @@ function listenForAdminDispatch(userId) {
         isListening = false;
     }
 
-    console.log('📡 Setting up PERMANENT listener for user:', userId);
+    console.log('📡 Setting up listener for user:', userId);
 
     try {
         dispatchChannel = supabaseClient.channel(`dispatch_${userId}`);
@@ -5377,14 +5568,19 @@ function listenForAdminDispatch(userId) {
             {
                 event: 'UPDATE',
                 schema: 'public',
-                table: 'payment_requests',
-                filter: `user_id=eq.${userId}`
+                table: 'payment_requests'
             },
             (payload) => {
                 console.log('📡 DISPATCH EVENT RECEIVED!', payload);
                 
                 const newData = payload.new;
-                if (newData && newData.token && newData.status === 'verified') {
+                
+                if (newData.user_id !== userId) {
+                    console.log('⏭️ Not for this user, skipping');
+                    return;
+                }
+                
+                if (newData && newData.token && newData.status === 'key_generated') {
                     console.log('✅ TOKEN DISPATCHED!');
                     console.log('🔑 Token:', newData.token);
                     showToast('🎉 Access granted! Token received!', 'success');
@@ -5397,7 +5593,7 @@ function listenForAdminDispatch(userId) {
             console.log('📡 Realtime status:', status);
             if (status === 'SUBSCRIBED') {
                 isListening = true;
-                console.log('✅ ✅ ✅ LISTENING FOR ADMIN DISPATCH');
+                console.log('✅ LISTENING FOR ADMIN DISPATCH');
             } else if (status === 'CHANNEL_ERROR' || status === 'CLOSED') {
                 isListening = false;
                 setTimeout(() => {
@@ -7001,45 +7197,55 @@ function toggleHistory() {
     // RESTORE USER SESSION
     // ============================================================
 
-    function restoreUserSession() {
-      loadData();
+   // ============================================================
+// RESTORE USER SESSION (UPDATED)
+// ============================================================
 
-      if (appData.users.length > 0) {
+// ============================================================
+// REPLACE THIS ENTIRE FUNCTION
+// ============================================================
+
+async function restoreUserSession() {
+    loadData();
+
+    if (appData.users.length > 0) {
         const lastUser = appData.users[appData.users.length - 1];
         currentUser = lastUser;
 
         const accountPanel = document.getElementById('accountPanel');
         if (accountPanel) {
-          accountPanel.style.display = 'none';
+            accountPanel.style.display = 'none';
         }
 
         const userIdPanel = document.getElementById('userIdPanel');
         if (userIdPanel) {
-          userIdPanel.style.display = 'block';
-          document.getElementById('userIdDisplay').textContent = currentUser.id;
+            userIdPanel.style.display = 'block';
+            document.getElementById('userIdDisplay').textContent = currentUser.id;
         }
 
         const userBadge = document.getElementById('userBadge');
         if (userBadge) {
-          userBadge.textContent = '👤 ' + currentUser.name;
+            userBadge.textContent = '👤 ' + currentUser.name;
         }
-        if (currentUser) { listenForAdminDispatch(currentUser.id); }
+
+      
+
         if (currentUser.verified) {
-          goToDashboard();
-          return true;
+            goToDashboard();
+            return true;
         } else {
-          showToast('💎 Welcome back, ' + currentUser.name + '! Verify payment to access predictions.', '');
-          return true;
+            // ✅ CHECK FOR MISSED TOKEN
+            await checkForMissedToken();
+            
+            showToast('💎 Welcome back, ' + currentUser.name + '! Verify payment to access predictions.', '');
+            return true;
         }
-      }
-// Start listening for admin dispatch
-if (currentUser) {
-    listenForAdminDispatch(currentUser.id);
-}
-      showToast(' Welcome to SHARPI Predictor!', '');
-      showPage('pageLanding');
-      return false;
     }
+
+    showToast(' Welcome to SHARPI Predictor!', '');
+    showPage('pageLanding');
+    return false;
+}
 
     // ============================================================
     // STATE
@@ -7182,14 +7388,25 @@ goToLanding = function() {
 };  // INIT
     // ============================================================
 
-    console.log(' SHARPI Predictor loaded');
+  // ============================================================
+// INIT (UPDATED)
+// ============================================================
+(async function init() {
+    console.log('🦈 SHARPI Predictor loaded');
     console.log('📊 Data:', appData);
 
-    restoreUserSession();
-    // Show verified badge if user is already verified
-setTimeout(function() {
-    updateVerifiedBadge();
-}, 500);
+    await restoreUserSession();
+
+    if (currentUser) {
+        listenForAdminDispatch(currentUser.id);
+    }
+
+    setTimeout(function() {
+        updateVerifiedBadge();
+    }, 500);
+
+    console.log('✅ Ready!');
+})();
 // ============================================================
 // REVIEWS SHOW MORE
 // ============================================================
@@ -7763,7 +7980,7 @@ console.log('✅ Aviator overlay patch installed!');
     display: flex;
     gap: 16px;
     justify-content: space-between;
-    border-top: 1px color:blue;
+    border-top: 1px ; color: blue;
     padding-top: 2px;
 }
 
@@ -9637,12 +9854,42 @@ generateRound = function() {
   // ============================================================
 // ✅ NEW: RECORD SALE AFTER TOKEN VERIFICATION
 // ============================================================
+// ============================================================
+// ✅ RECORD SALE AFTER TOKEN VERIFICATION (WITH GUARD)
+// ============================================================
 async function recordSaleAfterVerification(user, token, promoCode) {
     if (!supabaseClient) {
         console.warn('⚠️ Supabase not connected, skipping sale record');
         return;
     }
 
+    // ============================================================
+    // ✅ SIMPLE GUARD: Check if sale already exists
+    // ============================================================
+    try {
+        const { data: existing, error: checkError } = await supabaseClient
+            .from('sales')
+            .select('id')
+            .eq('user_id', user.id)
+            .eq('status', 'verified')
+            .maybeSingle();
+
+        if (checkError) {
+            console.warn('⚠️ Guard check failed, continuing:', checkError);
+        }
+
+        if (existing) {
+            console.log(`🛡️ Guard: Sale already exists for user ${user.id}, skipping duplicate`);
+            return; // ✅ EXIT - prevents all duplicate operations
+        }
+    } catch (e) {
+        console.warn('⚠️ Guard check error, continuing:', e);
+        // Continue - don't block the sale if guard fails
+    }
+
+    // ============================================================
+    // ORIGINAL FUNCTION CONTINUES
+    // ============================================================
     try {
         const { data: paymentData, error: paymentError } = await supabaseClient
             .from('payment_requests')
@@ -9714,22 +9961,22 @@ async function recordSaleAfterVerification(user, token, promoCode) {
             const today = new Date().toISOString().split('T')[0];
             const commission = amount * 0.5;
 
-            const { data: existing } = await supabaseClient
+            const { data: existingStats } = await supabaseClient
                 .from('daily_stats')
                 .select('id, purchases, earnings')
                 .eq('affiliate_code', promoCodeFromPayment)
                 .eq('date', today)
                 .maybeSingle();
 
-            if (existing) {
+            if (existingStats) {
                 await supabaseClient
                     .from('daily_stats')
                     .update({
-                        purchases: (existing.purchases || 0) + 1,
-                        earnings: (existing.earnings || 0) + commission,
+                        purchases: (existingStats.purchases || 0) + 1,
+                        earnings: (existingStats.earnings || 0) + commission,
                         updated_at: new Date().toISOString()
                     })
-                    .eq('id', existing.id);
+                    .eq('id', existingStats.id);
             } else {
                 await supabaseClient
                     .from('daily_stats')
